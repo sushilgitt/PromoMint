@@ -17,9 +17,7 @@ const OFFLINE_ACCESS_TOKEN_TYPE =
   "urn:shopify:params:oauth:token-type:offline-access-token";
 
 import shopify from "./shopify.js";
-import cancelSubscription, {
-  getActiveSubscriptions,
-} from "./cancel-subscription.js";
+import cancelSubscription from "./cancel-subscription.js";
 import GDPRWebhookHandlers from "./gdpr.js";
 import "./env.js";
 
@@ -488,52 +486,6 @@ const buildPricingReturnUrl = (req, shop, hostParam) => {
 
 const getBillingModeLabel = (isTest) => (isTest ? "TEST" : "LIVE");
 
-const normalizeSubscriptionMode = (subscription) => {
-  if (typeof subscription?.test === "boolean") {
-    return subscription.test;
-  }
-
-  return null;
-};
-
-const findModeMismatchSubscription = (subscriptions = []) =>
-  subscriptions.find((subscription) => {
-    if (subscription?.name !== PREMIUM_PLAN) {
-      return false;
-    }
-
-    const mode = normalizeSubscriptionMode(subscription);
-    return mode !== null && mode !== BILLING_IS_TEST;
-  }) || null;
-
-const buildModeMismatchDetails = (subscription) => {
-  if (!subscription) {
-    return [];
-  }
-
-  return [
-    `An active ${PREMIUM_PLAN} subscription exists in ${getBillingModeLabel(subscription.test)} mode while this app is running in ${getBillingModeLabel(BILLING_IS_TEST)} mode. Update ${BILLING_TEST_MODE_ENV} so both modes match.`,
-  ];
-};
-
-const sendBillingModeMismatch = (res, subscription, extra = {}) => {
-  const details = buildModeMismatchDetails(subscription);
-  const subscriptionMode =
-    normalizeSubscriptionMode(subscription) === null
-      ? null
-      : getBillingModeLabel(subscription.test);
-
-  return res.status(HTTP_STATUS.BAD_REQUEST).json({
-    billingModeMismatch: true,
-    mode: getBillingModeLabel(BILLING_IS_TEST),
-    appMode: getBillingModeLabel(BILLING_IS_TEST),
-    subscriptionMode,
-    details,
-    error: details[0],
-    ...extra,
-  });
-};
-
 const syncTierMetafield = async (session, tier, options = {}) => {
   const { ensureInstallation = false, deleteInstallation = false } = options;
 
@@ -569,24 +521,9 @@ const checkBillingState = async (req, session) => {
     return BillingService.checkSubscription(nextSession);
   });
 
-  let mismatchSubscription = null;
-  if (!billing?.hasActivePayment) {
-    const subscriptions = await withSessionRefresh(
-      req,
-      resolvedSession,
-      async (nextSession) => {
-        resolvedSession = nextSession;
-        return getActiveSubscriptions(nextSession);
-      }
-    );
-
-    mismatchSubscription = findModeMismatchSubscription(subscriptions);
-  }
-
   return {
     session: resolvedSession,
     billing,
-    mismatchSubscription,
   };
 };
 
@@ -978,10 +915,15 @@ const sendBillingReauthorizationRequired = (res, shop, details = []) =>
 
 const BillingService = {
   async checkSubscription(session) {
+    // Detect an active subscription whether Shopify recorded it as a TEST or a
+    // LIVE charge. Shopify FORCES test charges on development stores (which App
+    // Store reviewers use), so checking with the live-only flag would never see
+    // the reviewer's subscription. Real merchants are still billed for real
+    // because BillingService.requestSubscription uses isTest: BILLING_IS_TEST.
     return await shopify.api.billing.check({
       session,
       plans: [PREMIUM_PLAN],
-      isTest: BILLING_IS_TEST,
+      isTest: true,
       returnObject: true,
     });
   },
@@ -993,6 +935,11 @@ const BillingService = {
       );
     }
 
+    // Charge mode is env-driven via SHOPIFY_BILLING_TEST_MODE -> BILLING_IS_TEST:
+    // false => LIVE (merchants charged real money), true => TEST (test charges).
+    // NOTE: detection (checkSubscription) intentionally stays isTest:true and is
+    // NOT tied to this flag, so Shopify's forced-test charges on development
+    // stores (used by App Store reviewers) remain detectable in LIVE mode.
     return await shopify.api.billing.request({
       session,
       plan: PREMIUM_PLAN,
@@ -1002,9 +949,7 @@ const BillingService = {
   },
 
   async cancel(session) {
-    return await cancelSubscription(session, {
-      expectedTestMode: BILLING_IS_TEST,
-    });
+    return await cancelSubscription(session);
   },
 };
 
@@ -1182,14 +1127,6 @@ app.get("/api/scroll-to-top/hasSubscription", async (req, res) => {
     }
 
     const billing = await BillingService.checkSubscription(session);
-    const mismatchSubscription = !billing?.hasActivePayment
-      ? findModeMismatchSubscription(await getActiveSubscriptions(session))
-      : null;
-
-    if (mismatchSubscription) {
-      return sendBillingModeMismatch(res, mismatchSubscription, { shop });
-    }
-
     const tier = billing?.hasActivePayment ? "premium" : "free";
     const metafieldSync = await syncTierMetafield(session, tier, {
       ensureInstallation: tier === "premium",
@@ -1229,12 +1166,6 @@ app.post(
 
     const billingState = await checkBillingState(req, session);
     session = billingState.session;
-
-    if (billingState.mismatchSubscription) {
-      return sendBillingModeMismatch(res, billingState.mismatchSubscription, {
-        shop: session.shop,
-      });
-    }
 
     if (billingState.billing?.hasActivePayment) {
       const metafieldSync = await syncTierMetafield(session, "premium", {
@@ -1283,12 +1214,6 @@ app.post(
     const billingState = await checkBillingState(req, session);
     session = billingState.session;
 
-    if (billingState.mismatchSubscription) {
-      return sendBillingModeMismatch(res, billingState.mismatchSubscription, {
-        shop: session.shop,
-      });
-    }
-
     if (!billingState.billing?.hasActivePayment) {
       const metafieldSync = await syncTierMetafield(session, "free", {
         deleteInstallation: true,
@@ -1331,12 +1256,6 @@ app.get(
   ...runBillingEndpoint(async (req, res, session) => {
     const billingState = await checkBillingState(req, session);
     session = billingState.session;
-
-    if (billingState.mismatchSubscription) {
-      return sendBillingModeMismatch(res, billingState.mismatchSubscription, {
-        shop: session.shop,
-      });
-    }
 
     const tier = billingState.billing?.hasActivePayment ? "premium" : "free";
     const metafieldSync = await syncTierMetafield(session, tier, {

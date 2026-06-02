@@ -3,14 +3,9 @@ import shopify from "./shopify.js";
 
 const PREMIUM_PLAN = "Premium";
 
-export default async function cancelSubscription(
-  session,
-  { expectedTestMode } = {}
-) {
+export default async function cancelSubscription(session) {
   const subscriptions = await getActiveSubscriptions(session);
-  const subscriptionId = getActiveSubscriptionId(subscriptions, {
-    expectedTestMode,
-  });
+  const subscriptionId = getActiveSubscriptionId(subscriptions);
 
   if (!subscriptionId) {
     throw new Error("No active Premium subscription ID found for cancellation.");
@@ -31,38 +26,17 @@ export async function getActiveSubscriptions(session) {
   );
 }
 
-function getActiveSubscriptionId(subscriptions, { expectedTestMode } = {}) {
-  const matchingSubscriptions = subscriptions.filter(
-    (subscription) => subscription?.name === PREMIUM_PLAN
+function getActiveSubscriptionId(subscriptions) {
+  // Cancel the active Premium subscription regardless of whether Shopify
+  // recorded it as a TEST or LIVE charge. Development stores (used by App Store
+  // reviewers) always produce test charges, so a mode-specific match would fail
+  // to find the very subscription it needs to cancel.
+  const premium = subscriptions.find(
+    (subscription) => subscription?.name === PREMIUM_PLAN && subscription?.id
   );
 
-  if (typeof expectedTestMode === "boolean") {
-    const matchingModeSubscription = matchingSubscriptions.find(
-      (subscription) => subscription?.test === expectedTestMode
-    );
-
-    if (matchingModeSubscription?.id) {
-      return matchingModeSubscription.id;
-    }
-
-    const oppositeModeSubscription = matchingSubscriptions.find(
-      (subscription) =>
-        typeof subscription?.test === "boolean" &&
-        subscription.test !== expectedTestMode
-    );
-
-    if (oppositeModeSubscription) {
-      const expectedMode = expectedTestMode ? "TEST" : "LIVE";
-      const actualMode = oppositeModeSubscription.test ? "TEST" : "LIVE";
-
-      throw new Error(
-        `An active Premium subscription was found in ${actualMode} mode, but the app is running in ${expectedMode} mode. Update SHOPIFY_BILLING_TEST_MODE so the billing mode matches before cancelling.`
-      );
-    }
-  }
-
-  if (matchingSubscriptions[0]?.id) {
-    return matchingSubscriptions[0].id;
+  if (premium?.id) {
+    return premium.id;
   }
 
   if (subscriptions.length > 0) {

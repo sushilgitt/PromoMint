@@ -216,17 +216,6 @@ export default function Pricing() {
       );
     }
 
-    if (response.status === 400 && data?.billingModeMismatch) {
-      const mismatchError = new Error(
-        getErrorMessage(
-          data,
-          "This store has a subscription created in a different billing mode than the app is currently running in."
-        )
-      );
-      mismatchError.billingModeMismatch = true;
-      throw mismatchError;
-    }
-
     if (!response.ok) {
       throw new Error(getErrorMessage(data, fallback));
     }
@@ -333,23 +322,6 @@ export default function Pricing() {
     } catch (error) {
       if (isReauthorizationInProgressError(error)) {
         scheduleReauthRecovery();
-        return null;
-      }
-
-      // A billing-mode mismatch is a configuration problem, not a reauth or a
-      // transient failure — always surface it clearly and never drift to a
-      // recovered tier.
-      if (error?.billingModeMismatch) {
-        clearReauthRecoveryTimeout();
-        reauthRecoveryStartedRef.current = false;
-        setServerTier(null);
-        setBanner({
-          msg:
-            error instanceof Error
-              ? error.message
-              : "This store’s subscription billing mode does not match the app.",
-          status: "critical",
-        });
         return null;
       }
 
