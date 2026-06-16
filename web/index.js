@@ -19,6 +19,15 @@ const OFFLINE_ACCESS_TOKEN_TYPE =
 import shopify from "./shopify.js";
 import cancelSubscription from "./cancel-subscription.js";
 import GDPRWebhookHandlers from "./gdpr.js";
+import {
+  CouponValidationError,
+  normalizeCouponInput,
+  getCouponsState,
+  writeCoupons,
+  createDiscount,
+  updateDiscount,
+  deleteDiscount,
+} from "./coupons.js";
 import "./env.js";
 
 /* -------------------------------------------------------------------------- */
@@ -1279,6 +1288,243 @@ app.get("/api/getshop", shopify.validateAuthenticatedSession(), async (req, res)
   const session = await getSession(req, res);
   res.json({ shop: session?.shop || null });
 });
+
+/* -------------------------------------------------------------------------- */
+/*                              COUPONS (DISCOUNTS)                           */
+/* -------------------------------------------------------------------------- */
+
+const TIER_COUPON_LIMIT = { free: 3, premium: 6 };
+
+const getTierLimit = (tier) => TIER_COUPON_LIMIT[tier] ?? TIER_COUPON_LIMIT.free;
+
+const generateCouponId = () =>
+  `c_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+
+const buildCouponsPayload = async (session, coupons, currency) => {
+  const tier = await SubscriptionService.getPlanTier(session);
+  return { coupons, tier, limit: getTierLimit(tier), currency };
+};
+
+// CouponValidationError -> 400 (bad input / Shopify userError like duplicate
+// code). A plan-limit hit -> 403 with upsell flag. Everything else (incl. a 403
+// from a token missing write_discounts) flows through the shared billing/auth
+// handler, which converts unauthorized/scope errors into a reauth prompt.
+const handleCouponError = (req, res, session, err, contextLabel) => {
+  if (err instanceof CouponValidationError) {
+    return handleError(res, HTTP_STATUS.BAD_REQUEST, err.message);
+  }
+
+  if (err?.upsell) {
+    console.warn(`${contextLabel} blocked by plan limit`, {
+      shop: session?.shop,
+      message: err.message,
+    });
+    return res.status(403).json({ error: err.message, upsell: true });
+  }
+
+  return withBillingErrorHandling(req, res, session, err, contextLabel);
+};
+
+const resolveCouponSession = async (req, res) => {
+  const session = await getSession(req, res);
+  if (!session) {
+    await sendReauthorizationRequired(req, res, session, {
+      error:
+        "Authentication context is missing. Reopen the app from Shopify admin and try again.",
+    });
+    return null;
+  }
+  return session;
+};
+
+app.get(
+  "/api/coupons",
+  shopify.validateAuthenticatedSession(),
+  async (req, res) => {
+    let session = await resolveCouponSession(req, res);
+    if (!session) return undefined;
+
+    try {
+      const payload = await withSessionRefresh(req, session, async (s) => {
+        session = s;
+        const state = await getCouponsState(s);
+        return buildCouponsPayload(s, state.coupons, state.currency);
+      });
+      return res.json(payload);
+    } catch (err) {
+      return handleCouponError(req, res, session, err, "Coupon list");
+    }
+  }
+);
+
+app.post(
+  "/api/coupons",
+  shopify.validateAuthenticatedSession(),
+  async (req, res) => {
+    let session = await resolveCouponSession(req, res);
+    if (!session) return undefined;
+
+    let coupon;
+    try {
+      coupon = normalizeCouponInput(req.body);
+    } catch (err) {
+      return handleCouponError(req, res, session, err, "Coupon create");
+    }
+
+    try {
+      const payload = await withSessionRefresh(req, session, async (s) => {
+        session = s;
+        const state = await getCouponsState(s);
+
+        if (state.coupons.some((existing) => existing.code === coupon.code)) {
+          throw new CouponValidationError(
+            `A coupon with code "${coupon.code}" already exists.`
+          );
+        }
+
+        const tier = await SubscriptionService.getPlanTier(s);
+        const limit = getTierLimit(tier);
+        if (state.coupons.length >= limit) {
+          const limitError = new Error(
+            `You've reached your plan limit of ${limit} coupons. Upgrade to add more.`
+          );
+          limitError.upsell = true;
+          throw limitError;
+        }
+
+        const { discountGid, code } = await createDiscount(s, coupon);
+        const entry = {
+          id: generateCouponId(),
+          code,
+          title: coupon.title,
+          type: coupon.type,
+          value: coupon.value,
+          minSubtotal: coupon.minSubtotal,
+          discountGid,
+          status: "active",
+        };
+        const coupons = [...state.coupons, entry];
+        await writeCoupons(s, state.shopGid, coupons);
+        return { coupons, currency: state.currency };
+      });
+
+      const responseBody = await buildCouponsPayload(
+        session,
+        payload.coupons,
+        payload.currency
+      );
+      return res.json(responseBody);
+    } catch (err) {
+      return handleCouponError(req, res, session, err, "Coupon create");
+    }
+  }
+);
+
+app.put(
+  "/api/coupons/:id",
+  shopify.validateAuthenticatedSession(),
+  async (req, res) => {
+    let session = await resolveCouponSession(req, res);
+    if (!session) return undefined;
+
+    let coupon;
+    try {
+      coupon = normalizeCouponInput(req.body);
+    } catch (err) {
+      return handleCouponError(req, res, session, err, "Coupon update");
+    }
+
+    try {
+      const payload = await withSessionRefresh(req, session, async (s) => {
+        session = s;
+        const state = await getCouponsState(s);
+        const index = state.coupons.findIndex(
+          (existing) => existing.id === req.params.id
+        );
+
+        if (index === -1) {
+          throw new CouponValidationError("This coupon no longer exists.");
+        }
+
+        if (
+          state.coupons.some(
+            (existing, i) => i !== index && existing.code === coupon.code
+          )
+        ) {
+          throw new CouponValidationError(
+            `A coupon with code "${coupon.code}" already exists.`
+          );
+        }
+
+        const existing = state.coupons[index];
+        const { discountGid, code } = await updateDiscount(s, existing, coupon);
+        const updated = {
+          ...existing,
+          code,
+          title: coupon.title,
+          type: coupon.type,
+          value: coupon.value,
+          minSubtotal: coupon.minSubtotal,
+          discountGid,
+          status: "active",
+        };
+        const coupons = state.coupons.map((entry, i) =>
+          i === index ? updated : entry
+        );
+        await writeCoupons(s, state.shopGid, coupons);
+        return { coupons, currency: state.currency };
+      });
+
+      const responseBody = await buildCouponsPayload(
+        session,
+        payload.coupons,
+        payload.currency
+      );
+      return res.json(responseBody);
+    } catch (err) {
+      return handleCouponError(req, res, session, err, "Coupon update");
+    }
+  }
+);
+
+app.delete(
+  "/api/coupons/:id",
+  shopify.validateAuthenticatedSession(),
+  async (req, res) => {
+    let session = await resolveCouponSession(req, res);
+    if (!session) return undefined;
+
+    try {
+      const payload = await withSessionRefresh(req, session, async (s) => {
+        session = s;
+        const state = await getCouponsState(s);
+        const existing = state.coupons.find(
+          (entry) => entry.id === req.params.id
+        );
+
+        if (!existing) {
+          return { coupons: state.coupons, currency: state.currency };
+        }
+
+        await deleteDiscount(s, existing.discountGid);
+        const coupons = state.coupons.filter(
+          (entry) => entry.id !== req.params.id
+        );
+        await writeCoupons(s, state.shopGid, coupons);
+        return { coupons, currency: state.currency };
+      });
+
+      const responseBody = await buildCouponsPayload(
+        session,
+        payload.coupons,
+        payload.currency
+      );
+      return res.json(responseBody);
+    } catch (err) {
+      return handleCouponError(req, res, session, err, "Coupon delete");
+    }
+  }
+);
 
 /* -------------------------------------------------------------------------- */
 /*                              FRONTEND SERVING                              */

@@ -116,6 +116,10 @@ function EmbeddedNavigationMenu() {
     () => [
       { label: "Overview", destination: withEmbeddedParams("/", location.search) },
       {
+        label: "Coupons",
+        destination: withEmbeddedParams("/coupons", location.search),
+      },
+      {
         label: "Plans",
         destination: withEmbeddedParams("/pricing", location.search),
       },
