@@ -1325,7 +1325,33 @@ const handleCouponError = (req, res, session, err, contextLabel) => {
   return withBillingErrorHandling(req, res, session, err, contextLabel);
 };
 
+// Resolve the session WITHOUT shopify.validateAuthenticatedSession(): that
+// middleware requires session.isActive(api.config.scopes) — an exact scope
+// match — so adding write_discounts to the config 403-loops every stored token
+// that predates the new scope. The billing endpoints avoid it for the same
+// reason. We still authenticate: require a present, valid App Bridge bearer
+// token (so an unauthenticated ?shop= request can't fall through to a stored
+// session), then let getSession do the manual expiring-token exchange.
 const resolveCouponSession = async (req, res) => {
+  const bearerToken = getBearerTokenFromRequest(req);
+  if (!bearerToken) {
+    await sendReauthorizationRequired(req, res, null, {
+      error:
+        "Authentication context is missing. Reopen the app from Shopify admin and try again.",
+    });
+    return null;
+  }
+
+  try {
+    await shopify.api.session.decodeSessionToken(bearerToken);
+  } catch {
+    await sendReauthorizationRequired(req, res, null, {
+      error:
+        "Your session expired. Reopen the app from Shopify admin and try again.",
+    });
+    return null;
+  }
+
   const session = await getSession(req, res);
   if (!session) {
     await sendReauthorizationRequired(req, res, session, {
@@ -1339,7 +1365,6 @@ const resolveCouponSession = async (req, res) => {
 
 app.get(
   "/api/coupons",
-  shopify.validateAuthenticatedSession(),
   async (req, res) => {
     let session = await resolveCouponSession(req, res);
     if (!session) return undefined;
@@ -1359,7 +1384,6 @@ app.get(
 
 app.post(
   "/api/coupons",
-  shopify.validateAuthenticatedSession(),
   async (req, res) => {
     let session = await resolveCouponSession(req, res);
     if (!session) return undefined;
@@ -1422,7 +1446,6 @@ app.post(
 
 app.put(
   "/api/coupons/:id",
-  shopify.validateAuthenticatedSession(),
   async (req, res) => {
     let session = await resolveCouponSession(req, res);
     if (!session) return undefined;
@@ -1489,7 +1512,6 @@ app.put(
 
 app.delete(
   "/api/coupons/:id",
-  shopify.validateAuthenticatedSession(),
   async (req, res) => {
     let session = await resolveCouponSession(req, res);
     if (!session) return undefined;
