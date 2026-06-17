@@ -1,3 +1,12 @@
+{% comment %}
+  Coupons are managed in the PromoMint admin app, which creates a REAL Shopify
+  discount for each one and mirrors them to the shop metafield
+  custom.promomint_coupons (type json). This block renders ONLY those real,
+  app-managed coupons — there is no theme-editor code entry and no demo
+  fallback, so every code shown here actually reduces the price at checkout.
+  coupon_limit (3 free / 6 premium) caps how many are shown. If the store has
+  no app coupons yet, the block renders nothing.
+{% endcomment %}
 {% assign plan = shop.metafields.custom["mx-pdp-coupon"] %}
 
 {% assign is_premium = false %}
@@ -9,6 +18,10 @@
 {% if is_premium %}
   {% assign coupon_limit = 6 %}
 {% endif %}
+
+{% assign app_coupons = shop.metafields.custom.promomint_coupons.value %}
+
+{% if app_coupons and app_coupons.size > 0 %}
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@9/swiper-bundle.min.css">
 <script src="https://cdn.jsdelivr.net/npm/swiper@9/swiper-bundle.min.js" defer></script>
@@ -122,86 +135,29 @@
   <div class="swiper mxt-swiper">
     <div class="swiper-wrapper">
 
-      {% comment %}
-        Coupons created in the PromoMint admin app are the source of truth: the
-        app stores them as a JSON metafield (custom.promomint_coupons) AND
-        creates a real Shopify discount for each, so the codes actually reduce
-        the price at checkout. coupon_limit (3 free / 6 premium) still caps how
-        many show. If no app-managed coupons exist yet, fall back to the legacy
-        free-text block settings so existing installs don't go blank.
-      {% endcomment %}
-      {% assign app_coupons = shop.metafields.custom.promomint_coupons.value %}
+      {% for coupon in app_coupons limit: coupon_limit %}
 
-      {% if app_coupons and app_coupons.size > 0 %}
+        <div class="swiper-slide" style="width:260px;">
+          <div class="mxt-coupon-item">
+            <div class="mxt-coupon-stub"></div>
 
-        {% for coupon in app_coupons limit: coupon_limit %}
+            <div class="mxt-coupon-body">
+              <div class="mxt-coupon-title">{{ coupon.title }}</div>
+              <div class="mxt-coupon-code">Code: <b>{{ coupon.code }}</b></div>
 
-          <div class="swiper-slide" style="width:260px;">
-            <div class="mxt-coupon-item">
-              <div class="mxt-coupon-stub"></div>
+              <div class="mxt-coupon-copy" data-copy="{{ coupon.code }}">
+                <span class="mxt-copy-label">copy code</span>
 
-              <div class="mxt-coupon-body">
-                <div class="mxt-coupon-title">{{ coupon.title }}</div>
-                <div class="mxt-coupon-code">Code: <b>{{ coupon.code }}</b></div>
-
-                <div class="mxt-coupon-copy" data-copy="{{ coupon.code }}">
-                  <span class="mxt-copy-label">copy code</span>
-
-                  <svg class="mxt-copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="11" height="11" rx="2"/>
-                    <rect x="4" y="4" width="11" height="11" rx="2"/>
-                  </svg>
-                </div>
+                <svg class="mxt-copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="11" height="11" rx="2"/>
+                  <rect x="4" y="4" width="11" height="11" rx="2"/>
+                </svg>
               </div>
             </div>
           </div>
+        </div>
 
-        {% endfor %}
-
-      {% else %}
-
-        {% assign fallback_titles = "Shop ₹499+ Get 15% OFF,Shop ₹699+ Get 20% OFF,Buy 2 Get 10% OFF,Flat ₹100 OFF,Free Shipping,Special Discount" | split: "," %}
-        {% assign fallback_codes = "FLAT15,FLAT20,SAVE10,LESS100,FREESHIP,SPECIAL" | split: "," %}
-
-        {% for i in (1..coupon_limit) %}
-
-          {% assign title_key = 'title_' | append: i %}
-          {% assign code_key = 'code_' | append: i %}
-
-          {% assign title_val = block.settings[title_key] %}
-          {% assign code_val = block.settings[code_key] %}
-
-          {% if title_val == blank %}
-            {% assign title_val = fallback_titles[forloop.index0] %}
-          {% endif %}
-
-          {% if code_val == blank %}
-            {% assign code_val = fallback_codes[forloop.index0] %}
-          {% endif %}
-
-          <div class="swiper-slide" style="width:260px;">
-            <div class="mxt-coupon-item">
-              <div class="mxt-coupon-stub"></div>
-
-              <div class="mxt-coupon-body">
-                <div class="mxt-coupon-title">{{ title_val }}</div>
-                <div class="mxt-coupon-code">Code: <b>{{ code_val }}</b></div>
-
-                <div class="mxt-coupon-copy" data-copy="{{ code_val }}">
-                  <span class="mxt-copy-label">copy code</span>
-
-                  <svg class="mxt-copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="11" height="11" rx="2"/>
-                    <rect x="4" y="4" width="11" height="11" rx="2"/>
-                  </svg>
-                </div>
-              </div>
-            </div>
-          </div>
-
-        {% endfor %}
-
-      {% endif %}
+      {% endfor %}
 
     </div>
   </div>
@@ -234,6 +190,8 @@ document.addEventListener("click", function(e){
 });
 </script>
 
+{% endif %}
+
 {% schema %}
 {
   "name": "PromoMint Coupon Offers",
@@ -259,30 +217,8 @@ document.addEventListener("click", function(e){
 
     { "type": "checkbox", "id": "show_arrows", "label": "Show arrows", "default": true },
 
-    { "type": "header", "content": "Coupon 1" },
-    { "type": "text", "id": "title_1", "label": "Title" },
-    { "type": "text", "id": "code_1", "label": "Code" },
-
-    { "type": "header", "content": "Coupon 2" },
-    { "type": "text", "id": "title_2", "label": "Title" },
-    { "type": "text", "id": "code_2", "label": "Code" },
-
-    { "type": "header", "content": "Coupon 3" },
-    { "type": "text", "id": "title_3", "label": "Title" },
-    { "type": "text", "id": "code_3", "label": "Code" },
-
-
-    { "type": "header", "content": "Coupon 4 (Premium plan only)" },
-    { "type": "text", "id": "title_4", "label": "Title" },
-    { "type": "text", "id": "code_4", "label": "Code" },
-
-    { "type": "header", "content": "Coupon 5 (Premium plan only)" },
-    { "type": "text", "id": "title_5", "label": "Title" },
-    { "type": "text", "id": "code_5", "label": "Code" },
-
-    { "type": "header", "content": "Coupon 6 (Premium plan only)" },
-    { "type": "text", "id": "title_6", "label": "Title" },
-    { "type": "text", "id": "code_6", "label": "Code" }
+    { "type": "header", "content": "Coupons" },
+    { "type": "paragraph", "content": "Coupons are managed in the PromoMint app (Coupons page). Each one creates a real Shopify discount that works at checkout and appears here automatically — Free plan shows up to 3, Premium up to 6." }
   ]
 }
 {% endschema %}

@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node --check \"c:/Users/Sushil/Desktop/Codershive/PromoMint/web/index.js\")",
+      "Bash(shopify app *)",
+      "Bash(npm --prefix \"c:/Users/Sushil/Desktop/Codershive/PromoMint/web/frontend\" run build)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(curl -sS -H \"Authorization: Bearer 5|tjdr6IcsnDEnjW5l1muBj0nxvRVlidoQUewHsKYnd5ad1523\" \"http://91.239.208.85:8000/api/v1/deploy?uuid=c83t46y950m5qfhejdqsjqnm\")",
+      "Bash(curl -sS -H \"Authorization: Bearer 5|tjdr6IcsnDEnjW5l1muBj0nxvRVlidoQUewHsKYnd5ad1523\" \"http://91.239.208.85:8000/api/v1/deployments/oarfoudc1uxfm3cvyzvx9jo9\")",
+      "Bash(python -)",
+      "Bash(curl -sS -H \"Authorization: Bearer 5|tjdr6IcsnDEnjW5l1muBj0nxvRVlidoQUewHsKYnd5ad1523\" \"http://91.239.208.85:8000/api/v1/applications\")",
+      "Bash(curl -sS -H \"Authorization: Bearer 5|tjdr6IcsnDEnjW5l1muBj0nxvRVlidoQUewHsKYnd5ad1523\" \"http://91.239.208.85:8000/api/v1/resources\")",
+      "Bash(curl -sS -H \"Authorization: Bearer 5|tjdr6IcsnDEnjW5l1muBj0nxvRVlidoQUewHsKYnd5ad1523\" \"http://91.239.208.85:8000/api/v1/applications/c83t46y950m5qfhejdqsjqnm\")",
+      "Bash(curl -sS -X GET -H \"Authorization: Bearer 5|tjdr6IcsnDEnjW5l1muBj0nxvRVlidoQUewHsKYnd5ad1523\" \"http://91.239.208.85:8000/api/v1/applications/c83t46y950m5qfhejdqsjqnm/envs\")",
+      "Bash(curl -sS -X GET -H \"Authorization: Bearer 5|tjdr6IcsnDEnjW5l1muBj0nxvRVlidoQUewHsKYnd5ad1523\" \"http://91.239.208.85:8000/api/v1/deployments?uuid=c83t46y950m5qfhejdqsjqnm\")",
+      "Bash(curl -sS -X GET -H \"Authorization: Bearer 5|tjdr6IcsnDEnjW5l1muBj0nxvRVlidoQUewHsKYnd5ad1523\" \"http://91.239.208.85:8000/api/v1/applications/c83t46y950m5qfhejdqsjqnm/restart\")",
+      "Bash(npm --prefix \"c:/Users/Sushil/Desktop/Codershive/PromoMint/web\" run build)",
+      "Bash(node --check \"c:/Users/Sushil/Desktop/Codershive/PromoMint/web/cancel-subscription.js\")",
+      "Bash(node --check \"web/index.js\")",
+      "Bash(node --check \"web/cancel-subscription.js\")",
+      "Bash(npm --prefix \"web/frontend\" run build)",
+      "Bash(curl -sS -i -X POST -H \"Authorization: Bearer 5|tjdr6IcsnDEnjW5l1muBj0nxvRVlidoQUewHsKYnd5ad1523\" \"http://91.239.208.85:8000/api/v1/applications/c83t46y950m5qfhejdqsjqnm/deploy\")",
+      "Bash(curl -sS -i -X GET -H \"Authorization: Bearer 5|tjdr6IcsnDEnjW5l1muBj0nxvRVlidoQUewHsKYnd5ad1523\" \"http://91.239.208.85:8000/api/v1/deploy?uuid=c83t46y950m5qfhejdqsjqnm\")",
+      "Bash(curl -sS -H \"Authorization: Bearer 5|tjdr6IcsnDEnjW5l1muBj0nxvRVlidoQUewHsKYnd5ad1523\" \"http://91.239.208.85:8000/api/v1/deployments?uuid=c83t46y950m5qfhejdqsjqnm\")",
+      "Bash(curl -sS \"http://91.239.208.85:8000/api/v1/deployments?uuid=c83t46y950m5qfhejdqsjqnm&limit=1\" -H \"Authorization: Bearer 5|tjdr6IcsnDEnjW5l1muBj0nxvRVlidoQUewHsKYnd5ad1523\")",
+      "Bash(node -e \"const fs=require\\('fs'\\); const path='./web/node_modules/@shopify/shopify-api/package.json'; console.log\\(fs.existsSync\\(path\\)?'exists':'missing'\\);\")",
+      "Bash(node -e \"const mod=require\\('./web/node_modules/@shopify/shopify-api'\\); const keys=Object.keys\\(mod\\).filter\\(k=>/billing/i.test\\(k\\)||/error/i.test\\(k\\)\\); console.log\\(keys\\);\")",
+      "Bash(node -e \"const fs=require\\('fs'\\); const path=require.resolve\\('./web/node_modules/@shopify/shopify-api'\\); console.log\\(path\\);\")",
+      "Bash(curl -sS -X GET \"http://91.239.208.85:8000/api/v1/deploy?uuid=c83t46y950m5qfhejdqsjqnm\" -H \"Authorization: Bearer 5|tjdr6IcsnDEnjW5l1muBj0nxvRVlidoQUewHsKYnd5ad1523\")",
+      "Bash(node -e \"const fs=require\\('fs'\\); const p1='./web/node_modules/@shopify/shopify-api/dist/cjs/lib/auth/get-embedded-app-url.js'; const p2='./web/node_modules/@shopify/shopify-api/dist/cjs/lib/webhooks/register.js'; console.log\\(p1, fs.existsSync\\(p1\\)\\); console.log\\(p2, fs.existsSync\\(p2\\)\\);\")",
+      "Bash(npm --prefix web/frontend run build)",
+      "Bash(npm run *)",
+      "Bash(curl -sS -I \"https://c83t46y950m5qfhejdqsjqnm.91.239.208.85.sslip.io\")",
+      "WebFetch(domain:app.unpkg.com)"
+    ]
+  }
+}
