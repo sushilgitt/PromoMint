@@ -1,5 +1,5 @@
 // @ts-check
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Page,
   Layout,
@@ -170,9 +170,17 @@ export default function Coupons() {
     }
   }, [fetchAuth, withShopQuery]);
 
+  // Load once on mount. Do NOT depend on loadCoupons/fetchAuth here:
+  // useAuthenticatedFetch() returns a new function every render, so depending on
+  // it would re-run this effect on every render → infinite fetch loop (the
+  // spinner flickers forever). Pricing.jsx uses the same empty-deps pattern.
+  const didLoadRef = useRef(false);
   useEffect(() => {
+    if (didLoadRef.current) return;
+    didLoadRef.current = true;
     loadCoupons();
-  }, [loadCoupons]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const resetForm = () => setForm(EMPTY_FORM);
 
