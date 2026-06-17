@@ -888,8 +888,6 @@ const isBillingScopeError = (err) => {
 // under-scoped. Surface it as an actionable reauth/approval prompt instead of
 // looping silently through plain session reauthorization.
 const isForbiddenScopeError = (err) => {
-  if (getErrorStatusCode(err) !== 403) return false;
-
   const messageParts = [
     err?.message,
     ...(Array.isArray(err?.errorData) ? formatBillingErrorDetails(err.errorData) : []),
@@ -897,6 +895,21 @@ const isForbiddenScopeError = (err) => {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
+
+  // Admin GraphQL access-scope denials (e.g. "Access denied for
+  // discountCodeBasicCreate field. Required access: Apps must have
+  // `write_discounts` access scope.") are returned as a NORMAL GraphQL error:
+  // HTTP 200, errors array, no 403 status. Detect them by message so they route
+  // to the reauthorization/approval flow (which re-grants the missing scope)
+  // instead of surfacing the raw error to the merchant.
+  const looksLikeMissingScope =
+    (messageParts.includes("access denied") ||
+      messageParts.includes("required access")) &&
+    (messageParts.includes("scope") || messageParts.includes("write_discounts"));
+
+  if (looksLikeMissingScope) return true;
+
+  if (getErrorStatusCode(err) !== 403) return false;
 
   return (
     messageParts.includes("forbidden") ||
@@ -913,7 +926,7 @@ const sendBillingReauthorizationRequired = (res, shop, details = []) =>
     requiresBillingScopes: true,
     shop,
     error:
-      "Shopify billing approval needs fresh app authorization with subscription scopes. Reinstall or reauthorize the app, then try Premium again.",
+      "This app needs fresh authorization with the required permissions. Approve access when prompted, then try again.",
     details,
   });
 
