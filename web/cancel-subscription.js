@@ -1,7 +1,6 @@
 import { GraphqlQueryError } from "@shopify/shopify-api";
 import shopify from "./shopify.js";
-
-const PREMIUM_PLAN = "Premium";
+import { BILLING_PLAN_NAMES } from "./billing-plans.js";
 
 export default async function cancelSubscription(session) {
   const subscriptions = await getActiveSubscriptions(session);
@@ -27,12 +26,17 @@ export async function getActiveSubscriptions(session) {
 }
 
 function getActiveSubscriptionId(subscriptions) {
-  // Cancel the active Premium subscription regardless of whether Shopify
-  // recorded it as a TEST or LIVE charge. Development stores (used by App Store
+  // Cancel the active paid subscription regardless of whether Shopify recorded
+  // it as a TEST or LIVE charge. Development stores (used by App Store
   // reviewers) always produce test charges, so a mode-specific match would fail
   // to find the very subscription it needs to cancel.
+  //
+  // Matching against every plan name matters now that the tier has both a
+  // monthly and an annual option: keying on one name would leave an annual
+  // subscriber unable to cancel.
   const premium = subscriptions.find(
-    (subscription) => subscription?.name === PREMIUM_PLAN && subscription?.id
+    (subscription) =>
+      BILLING_PLAN_NAMES.includes(subscription?.name) && subscription?.id
   );
 
   if (premium?.id) {
@@ -41,7 +45,7 @@ function getActiveSubscriptionId(subscriptions) {
 
   if (subscriptions.length > 0) {
     throw new Error(
-      "Active subscriptions were found, but none matched the Premium plan."
+      "Active subscriptions were found, but none matched a PromoMint plan."
     );
   }
 

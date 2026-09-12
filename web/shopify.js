@@ -7,8 +7,13 @@ import {
   mongoDbUrl,
   mongoSessionCollection,
 } from "./mongo-config.js";
-const PREMIUM_PLAN = "Premium";
-const PREMIUM_PLAN_PRICE = 19;
+import {
+  BILLING_CURRENCY,
+  PREMIUM_ANNUAL_PLAN,
+  PREMIUM_ANNUAL_PRICE,
+  PREMIUM_MONTHLY_PLAN,
+  PREMIUM_MONTHLY_PRICE,
+} from "./billing-plans.js";
 // NOTE: The Shopify App Billing API (charging merchants for this app) requires
 // NO dedicated access scope — an app can always manage its own subscriptions.
 // It does require the app to use *public* distribution. The previously
@@ -21,11 +26,20 @@ const shopifyScopes = (process.env.SCOPES || "")
   .map((scope) => scope.trim())
   .filter(Boolean);
 
+// Two billing options for the same "premium" feature tier. Leaving
+// replacementBehavior unset means Shopify's STANDARD behaviour: approving one
+// plan cancels the other on activation and prorates, so a merchant switching
+// between monthly and annual never ends up paying for both.
 const billingConfig = {
-  [PREMIUM_PLAN]: {
-    amount: PREMIUM_PLAN_PRICE,
-    currencyCode: "USD",
+  [PREMIUM_MONTHLY_PLAN]: {
+    amount: PREMIUM_MONTHLY_PRICE,
+    currencyCode: BILLING_CURRENCY,
     interval: BillingInterval.Every30Days,
+  },
+  [PREMIUM_ANNUAL_PLAN]: {
+    amount: PREMIUM_ANNUAL_PRICE,
+    currencyCode: BILLING_CURRENCY,
+    interval: BillingInterval.Annual,
   },
 };
 

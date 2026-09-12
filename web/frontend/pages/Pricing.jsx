@@ -21,6 +21,59 @@ import {
   hasRecentReauthAttempt,
 } from "../hooks";
 
+const FREE_PLAN = "free";
+const PREMIUM_MONTHLY_PLAN = "premium";
+const PREMIUM_ANNUAL_PLAN = "premium_annual";
+
+// Slugs are the wire format shared with the backend (web/billing-plans.js).
+const PLAN_SLUGS = [FREE_PLAN, PREMIUM_MONTHLY_PLAN, PREMIUM_ANNUAL_PLAN];
+
+const MONTHLY_PRICE = "19";
+const ANNUAL_PRICE = "190";
+// 12 x $19 = $228 against $190.
+const ANNUAL_SAVING = "38";
+
+const PLAN_META = {
+  [FREE_PLAN]: {
+    name: "Free",
+    price: "$0",
+    cadence: "",
+    approveLabel: "Confirm Free plan",
+    confirmTitle: "Move to the Free plan?",
+    confirmBody: "The Free plan supports up to 3 coupon offers.",
+  },
+  [PREMIUM_MONTHLY_PLAN]: {
+    name: "Premium Monthly",
+    price: `$${MONTHLY_PRICE}`,
+    cadence: "per month",
+    approveLabel: `Approve $${MONTHLY_PRICE}/month`,
+    confirmTitle: "Continue with Premium Monthly?",
+    confirmBody:
+      "Premium supports up to 6 coupon offers, billed monthly. Shopify will ask you to approve the charge.",
+  },
+  [PREMIUM_ANNUAL_PLAN]: {
+    name: "Premium Yearly",
+    price: `$${ANNUAL_PRICE}`,
+    cadence: "per year",
+    approveLabel: `Approve $${ANNUAL_PRICE}/year`,
+    confirmTitle: "Continue with Premium Yearly?",
+    confirmBody:
+      "Premium supports up to 6 coupon offers, billed once a year. Shopify will ask you to approve the charge.",
+  },
+};
+
+const isPremiumPlan = (plan) =>
+  plan === PREMIUM_MONTHLY_PLAN || plan === PREMIUM_ANNUAL_PLAN;
+
+// The API reports the feature tier ("free"/"premium") plus which billing option
+// is active ("planSlug"). planSlug is absent on responses from an older backend
+// build, so fall back to monthly rather than showing no current plan at all.
+const resolvePlanSlug = (data) => {
+  if (data?.tier === "free") return FREE_PLAN;
+  if (data?.tier !== "premium") return null;
+  return isPremiumPlan(data?.planSlug) ? data.planSlug : PREMIUM_MONTHLY_PLAN;
+};
+
 const PENDING_PLAN_STORAGE_KEY = "promomint:pendingPlan";
 const RETURN_TO_STORAGE_KEY = "promomint:returnTo";
 const REQUEST_TIMEOUT_MS = 15000;
@@ -86,22 +139,17 @@ export default function Pricing() {
     []
   );
 
-  const [serverTier, setServerTier] = useState(
-    /** @type {"free" | "premium" | null} */ (null)
+  const [serverPlan, setServerPlan] = useState(
+    /** @type {"free" | "premium" | "premium_annual" | null} */ (null)
   );
   const [loading, setLoading] = useState({ page: true, action: null });
   const [confirm, setConfirm] = useState({ open: false, target: null });
   const [banner, setBanner] = useState({ msg: "", status: null });
 
-  const PRICE = "19";
-
-  const selectedPlan = useMemo(() => {
-    if (serverTier !== "free" && serverTier !== "premium") {
-      return null;
-    }
-
-    return serverTier;
-  }, [serverTier]);
+  const selectedPlan = useMemo(
+    () => (PLAN_SLUGS.includes(serverPlan) ? serverPlan : null),
+    [serverPlan]
+  );
 
   const withShopQuery = (path) => {
     if (!shop && !host) return path;
@@ -140,10 +188,9 @@ export default function Pricing() {
     if (!pendingPlan) return;
 
     setBanner({
-      msg:
-        pendingPlan === "premium"
-          ? "Authentication restored. Resuming the Premium billing flow."
-          : "Authentication restored. Resuming the Free plan change.",
+      msg: isPremiumPlan(pendingPlan)
+        ? `Authentication restored. Resuming the ${PLAN_META[pendingPlan].name} billing flow.`
+        : "Authentication restored. Resuming the Free plan change.",
       status: "info",
     });
   };
@@ -242,10 +289,10 @@ export default function Pricing() {
   };
 
   const performPlanAction = async (plan, { silent = false } = {}) => {
-    if (plan === "free") {
+    if (plan === FREE_PLAN) {
       const data = await postPlanAction(
         "/api/cancelSubscription",
-        "free",
+        FREE_PLAN,
         "We couldn’t switch you to the Free plan."
       );
 
@@ -254,31 +301,39 @@ export default function Pricing() {
       }
 
       clearPendingBillingResume();
-      setServerTier("free");
+      setServerPlan(FREE_PLAN);
       if (!silent) {
         setBanner({ msg: "Your store is now on the Free plan.", status: "success" });
       }
-      return { redirected: false, tier: data.tier };
+      return { redirected: false, plan: FREE_PLAN };
     }
 
+    const planName = PLAN_META[plan].name;
     const data = await postPlanAction(
       "/api/createSubscription",
-      "premium",
-      "We couldn’t start the Premium subscription."
+      plan,
+      `We couldn’t start the ${planName} subscription.`
     );
 
-    if (data.isActiveSubscription) {
-      clearPendingBillingResume();
-      setServerTier("premium");
-      if (!silent) {
-        setBanner({ msg: "Your Premium plan is already active.", status: "success" });
-      }
-      return { redirected: false, tier: data.tier };
-    }
-
+    // Check the approval link FIRST. When a merchant switches between monthly
+    // and annual the response carries BOTH an active subscription (the plan
+    // they still hold until approval) and a confirmationUrl for the new one —
+    // testing isActiveSubscription first would swallow the switch.
     if (data.confirmationUrl) {
       redirect.dispatch(Redirect.Action.REMOTE, String(data.confirmationUrl));
-      return { redirected: true, tier: data.tier };
+      return { redirected: true, plan };
+    }
+
+    if (data.isActiveSubscription && data.planSlug === plan) {
+      clearPendingBillingResume();
+      setServerPlan(plan);
+      if (!silent) {
+        setBanner({
+          msg: `Your ${planName} plan is already active.`,
+          status: "success",
+        });
+      }
+      return { redirected: false, plan };
     }
 
     throw new Error("Shopify did not return a billing approval link.");
@@ -303,13 +358,14 @@ export default function Pricing() {
         "We couldn’t confirm your current plan."
       );
 
-      if (data?.tier !== "premium" && data?.tier !== "free") {
+      const resolvedPlan = resolvePlanSlug(data);
+      if (!resolvedPlan) {
         throw new Error("We couldn’t confirm your current plan.");
       }
 
       clearReauthRecoveryTimeout();
       reauthRecoveryStartedRef.current = false;
-      setServerTier(data.tier);
+      setServerPlan(resolvedPlan);
       setBanner((currentBanner) => {
         if (currentBanner.status === "critical" || currentBanner.status === "warning") {
           return { msg: "", status: null };
@@ -318,7 +374,7 @@ export default function Pricing() {
         return currentBanner;
       });
 
-      return data.tier;
+      return resolvedPlan;
     } catch (error) {
       if (isReauthorizationInProgressError(error)) {
         scheduleReauthRecovery();
@@ -326,7 +382,7 @@ export default function Pricing() {
       }
 
       if (!allowSoftFailure) {
-        setServerTier(null);
+        setServerPlan(null);
         setBanner({
           msg:
             error instanceof Error
@@ -358,17 +414,19 @@ export default function Pricing() {
         showResumeBanner(pendingPlan);
       }
 
-      const tier = await refreshTier({
+      const activePlan = await refreshTier({
         allowSoftFailure: billingReturnState.isBillingReturn || !!pendingPlan,
       });
 
       if (billingReturnState.isBillingReturn) {
         clearBillingReturnParams();
 
-        if (tier === "premium") {
+        // `plan` on the return URL is the plan the merchant was approving, so
+        // the confirmation names the plan they actually landed on.
+        if (isPremiumPlan(activePlan)) {
           clearPendingBillingResume();
           setBanner({
-            msg: "Premium billing approved. Your store is now on the Premium plan.",
+            msg: `Premium billing approved. Your store is now on the ${PLAN_META[activePlan].name} plan.`,
             status: "success",
           });
           return;
@@ -393,10 +451,9 @@ export default function Pricing() {
           if (!result.redirected) {
             await refreshTier({ allowSoftFailure: true });
             setBanner({
-              msg:
-                pendingPlan === "premium"
-                  ? "Premium plan restored after reauthorization."
-                  : "Free plan restored after reauthorization.",
+              msg: isPremiumPlan(pendingPlan)
+                ? `${PLAN_META[pendingPlan].name} plan restored after reauthorization.`
+                : "Free plan restored after reauthorization.",
               status: "success",
             });
           }
@@ -461,7 +518,13 @@ export default function Pricing() {
   };
 
   const isCurrent = (plan) => selectedPlan === plan;
-  const hasResolvedPlan = selectedPlan === "free" || selectedPlan === "premium";
+  const hasResolvedPlan = PLAN_SLUGS.includes(selectedPlan);
+
+  const confirmMeta = confirm.target ? PLAN_META[confirm.target] : null;
+  // Moving between the two paid options rather than up from Free: worth saying
+  // out loud that Shopify prorates, so the merchant isn't afraid of a double charge.
+  const isSwitchingBillingCadence =
+    isPremiumPlan(confirm.target) && isPremiumPlan(selectedPlan);
 
   const Feature = ({ children }) => (
     <Stack spacing="tight" alignment="center">
@@ -478,10 +541,9 @@ export default function Pricing() {
     boxShadow: isCurrent(plan)
       ? `0 18px 45px ${promoMintColors.shadowStrong}`
       : `0 8px 24px ${promoMintColors.shadow}`,
-    background:
-      plan === "premium"
-        ? `linear-gradient(180deg, #ffffff 0%, ${promoMintColors.indigoSoft} 100%)`
-        : `linear-gradient(180deg, #ffffff 0%, ${promoMintColors.mintSoft} 100%)`,
+    background: isPremiumPlan(plan)
+      ? `linear-gradient(180deg, #ffffff 0%, ${promoMintColors.indigoSoft} 100%)`
+      : `linear-gradient(180deg, #ffffff 0%, ${promoMintColors.mintSoft} 100%)`,
     transform: isCurrent(plan) ? "translateY(-4px)" : "none",
     transition: "all 0.2s ease",
   });
@@ -518,75 +580,101 @@ export default function Pricing() {
   const planIntro =
     "Pick the plan that matches how many coupon offers you want to feature on your product pages.";
 
+  const savingBadge = {
+    background: promoMintColors.mint,
+    color: promoMintColors.text,
+    padding: "4px 12px",
+    borderRadius: 999,
+    fontSize: 12,
+  };
+
+  const cadenceStyle = {
+    color: promoMintColors.mutedText,
+    fontSize: 14,
+    marginTop: -6,
+  };
+
+  // One card per plan slug. Free and Premium Monthly keep the exact features
+  // and pricing they always had; Premium Yearly is the same feature set billed
+  // once a year.
+  const PlanCard = ({ plan, blurb, offerLimit, badge, buttonStyle, activeLabel }) => {
+    const meta = PLAN_META[plan];
+
+    return (
+      <Card sectioned style={cardStyle(plan)}>
+        <Stack alignment="center" distribution="equalSpacing">
+          <h2 style={cardHeadingStyle}>{meta.name}</h2>
+          {isCurrent(plan) ? (
+            <span style={currentBadge}>Current</span>
+          ) : (
+            badge || null
+          )}
+        </Stack>
+
+        <h1 style={priceStyle}>{meta.price}</h1>
+        {meta.cadence ? <p style={cadenceStyle}>{meta.cadence}</p> : null}
+        <p style={mutedTextStyle}>{blurb}</p>
+
+        <Stack vertical spacing="loose" style={sectionSpacingStyle}>
+          <Feature>Display coupon offers on product pages</Feature>
+          <Feature>Show up to {offerLimit} active offers</Feature>
+          <Feature>Adjust colors and layout</Feature>
+          <Feature>Keep slider arrow navigation</Feature>
+          <Feature>Support mobile-friendly browsing</Feature>
+        </Stack>
+
+        <div style={actionSpacingStyle}>
+          <Button
+            fullWidth
+            style={buttonStyle}
+            disabled={
+              !hasResolvedPlan ||
+              isCurrent(plan) ||
+              loading.page ||
+              !!loading.action
+            }
+            loading={loading.action === plan}
+            onClick={() => openConfirm(plan)}
+          >
+            {isCurrent(plan) ? activeLabel : `Choose ${meta.name}`}
+          </Button>
+        </div>
+      </Card>
+    );
+  };
+
   const pageContent = (
     <Layout>
-      <Layout.Section oneHalf>
-        <Card sectioned style={cardStyle("free")}>
-          <Stack alignment="center" distribution="equalSpacing">
-            <h2 style={cardHeadingStyle}>Free</h2>
-            {isCurrent("free") && <span style={currentBadge}>Current</span>}
-          </Stack>
-
-          <h1 style={priceStyle}>$0</h1>
-          <p style={mutedTextStyle}>A simple option for smaller catalogs</p>
-
-          <Stack vertical spacing="loose" style={sectionSpacingStyle}>
-            <Feature>Display coupon offers on product pages</Feature>
-            <Feature>Show up to 3 active offers</Feature>
-            <Feature>Adjust colors and layout</Feature>
-            <Feature>Keep slider arrow navigation</Feature>
-            <Feature>Support mobile-friendly browsing</Feature>
-          </Stack>
-
-          <div style={actionSpacingStyle}>
-            <Button
-              fullWidth
-              style={freeButtonStyle}
-              disabled={!hasResolvedPlan || isCurrent("free") || loading.page || !!loading.action}
-              loading={loading.action === "free"}
-              onClick={() => openConfirm("free")}
-            >
-              {isCurrent("free") ? "Active plan" : "Choose Free"}
-            </Button>
-          </div>
-        </Card>
+      <Layout.Section oneThird>
+        <PlanCard
+          plan={FREE_PLAN}
+          blurb="A simple option for smaller catalogs"
+          offerLimit={3}
+          buttonStyle={freeButtonStyle}
+          activeLabel="Active plan"
+        />
       </Layout.Section>
 
-      <Layout.Section oneHalf>
-        <Card sectioned style={cardStyle("premium")}>
-          <Stack alignment="center" distribution="equalSpacing">
-            <h2 style={cardHeadingStyle}>Premium</h2>
-            {!isCurrent("premium") && (
-              <span style={popularBadge}>Popular choice</span>
-            )}
-            {isCurrent("premium") && <span style={currentBadge}>Current</span>}
-          </Stack>
+      <Layout.Section oneThird>
+        <PlanCard
+          plan={PREMIUM_MONTHLY_PLAN}
+          blurb="More room for stores running multiple offers"
+          offerLimit={6}
+          badge={<span style={popularBadge}>Popular choice</span>}
+          buttonStyle={premiumButtonStyle}
+          activeLabel="Premium Monthly is active"
+        />
+      </Layout.Section>
 
-          <h1 style={priceStyle}>${PRICE}</h1>
-          <p style={mutedTextStyle}>
-            More room for stores running multiple offers
-          </p>
-
-          <Stack vertical spacing="loose" style={sectionSpacingStyle}>
-            <Feature>Display coupon offers on product pages</Feature>
-            <Feature>Show up to 6 active offers</Feature>
-            <Feature>Adjust colors and layout</Feature>
-            <Feature>Keep slider arrow navigation</Feature>
-            <Feature>Support mobile-friendly browsing</Feature>
-          </Stack>
-
-          <div style={actionSpacingStyle}>
-            <Button
-              fullWidth
-              style={premiumButtonStyle}
-              disabled={!hasResolvedPlan || isCurrent("premium") || loading.page || !!loading.action}
-              loading={loading.action === "premium"}
-              onClick={() => openConfirm("premium")}
-            >
-              {isCurrent("premium") ? "Premium is active" : "Choose Premium"}
-            </Button>
-          </div>
-        </Card>
+      <Layout.Section oneThird>
+        <PlanCard
+          plan={PREMIUM_ANNUAL_PLAN}
+          blurb={`Everything in Premium, billed yearly — save $${ANNUAL_SAVING} a year`}
+          offerLimit={6}
+          badge={<span style={savingBadge}>Save ${ANNUAL_SAVING}</span>}
+          buttonStyle={premiumButtonStyle}
+          activeLabel="Premium Yearly is active"
+        />
       </Layout.Section>
     </Layout>
   );
@@ -597,16 +685,9 @@ export default function Pricing() {
         open={confirm.open}
         onClose={() => setConfirm({ open: false, target: null })}
         accessibilityLabel="Plan change confirmation"
-        title={
-          confirm.target === "free"
-            ? "Move to the Free plan?"
-            : "Continue with Premium?"
-        }
+        title={confirmMeta?.confirmTitle || "Change your plan?"}
         primaryAction={{
-          content:
-            confirm.target === "free"
-              ? "Confirm Free plan"
-              : `Approve $${PRICE}/month`,
+          content: confirmMeta?.approveLabel || "Confirm",
           onAction: runConfirm,
           loading: loading.action === confirm.target,
           disabled: !confirm.target || loading.page || !!loading.action,
@@ -614,11 +695,14 @@ export default function Pricing() {
       >
         <Modal.Section>
           <TextContainer>
-            <p>
-              {confirm.target === "free"
-                ? "The Free plan supports up to 3 coupon offers."
-                : "The Premium plan supports up to 6 coupon offers."}
-            </p>
+            <p>{confirmMeta?.confirmBody}</p>
+            {isSwitchingBillingCadence ? (
+              <p>
+                Shopify replaces your current {PLAN_META[selectedPlan].name}{" "}
+                subscription when you approve this one, and prorates what you
+                have already paid — you will not be charged for both.
+              </p>
+            ) : null}
           </TextContainer>
         </Modal.Section>
       </Modal>
