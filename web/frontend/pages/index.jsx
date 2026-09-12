@@ -6,7 +6,7 @@ import {
   Page,
   TextContainer,
 } from "@shopify/polaris";
-import { promoMintColors, promoMintStyles } from "../brand";
+import { promoMintColors, promoMintStyles, promoMintType } from "../brand";
 
 const decodeHost = (host) => {
   if (!host) return "";
@@ -63,12 +63,14 @@ export default function HomePage() {
         <Layout.Section>
           <Card sectioned style={promoMintStyles.heroCard}>
             <TextContainer spacing="loose">
-              <h2 style={{ color: promoMintColors.text }}>Display coupon offers where shoppers need them</h2>
-              <p style={{ color: promoMintColors.mutedText }}>
+              <h2 style={{ ...promoMintType.sectionHeading, color: promoMintColors.text }}>
+                Display coupon offers where shoppers need them
+              </h2>
+              <p style={{ ...promoMintType.blurb, color: promoMintColors.mutedText }}>
                 PromoMint lets you place coupon offers directly on product pages
                 so customers can spot available savings and copy codes quickly.
               </p>
-              <p style={{ color: promoMintColors.mutedText }}>
+              <p style={{ ...promoMintType.blurb, color: promoMintColors.mutedText }}>
                 To get started, add the PromoMint Coupon Offers app block to your
                 product template in the theme editor, then create your coupons on
                 the Coupons page. Each coupon becomes a real Shopify discount, so
@@ -81,13 +83,13 @@ export default function HomePage() {
         <Layout.Section oneHalf>
           <Card sectioned title="Getting started" style={promoMintStyles.accentCard}>
             <TextContainer spacing="loose">
-              <p style={{ color: promoMintColors.mutedText }}>
+              <p style={{ ...promoMintType.blurb, color: promoMintColors.mutedText }}>
                 Place the PromoMint Coupon Offers app block on your product
                 template in the theme editor, then create the discount codes you
                 want to show on the Coupons page.
               </p>
               <Button
-                style={promoMintStyles.primaryButton}
+                primary
                 onClick={() =>
                   navigate(withEmbeddedParams("/coupons", location.search))
                 }
@@ -101,12 +103,12 @@ export default function HomePage() {
         <Layout.Section oneHalf>
           <Card sectioned title="Plans" style={promoMintStyles.accentCard}>
             <TextContainer spacing="loose">
-              <p style={{ color: promoMintColors.mutedText }}>
+              <p style={{ ...promoMintType.blurb, color: promoMintColors.mutedText }}>
                 Compare the available plan options and choose the one that fits
                 your store.
               </p>
               <Button
-                style={promoMintStyles.primaryButton}
+                primary
                 onClick={() =>
                   navigate(withEmbeddedParams("/pricing", location.search))
                 }

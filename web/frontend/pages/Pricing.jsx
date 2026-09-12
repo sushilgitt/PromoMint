@@ -2,16 +2,13 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Page,
-  Layout,
-  Card,
   Button,
   Banner,
-  Stack,
   Modal,
   TextContainer,
   Icon,
 } from "@shopify/polaris";
-import { promoMintColors, promoMintStyles } from "../brand";
+import { promoMintColors, promoMintType } from "../brand";
 import { CircleTickMinor } from "@shopify/polaris-icons";
 import { Redirect } from "@shopify/app-bridge/actions";
 import { useAppBridge } from "@shopify/app-bridge-react";
@@ -526,107 +523,157 @@ export default function Pricing() {
   const isSwitchingBillingCadence =
     isPremiumPlan(confirm.target) && isPremiumPlan(selectedPlan);
 
+  // Rendered as flex rather than Polaris <Stack>: Stack wraps by default, which
+  // dropped the longest label onto its own line beneath the tick.
   const Feature = ({ children }) => (
-    <Stack spacing="tight" alignment="center">
-      {tick}
-      <span style={{ fontSize: 14, color: promoMintColors.text }}>{children}</span>
-    </Stack>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 8,
+        marginBottom: 10,
+      }}
+    >
+      <span style={{ flex: "0 0 auto", display: "flex", marginTop: 1 }}>
+        {tick}
+      </span>
+      <span style={{ ...promoMintType.feature, color: promoMintColors.text }}>
+        {children}
+      </span>
+    </div>
   );
 
+  // Applied to a plain <div> wrapper: Polaris <Card> drops an incoming `style`
+  // prop, so styling the Card directly rendered nothing at all.
   const cardStyle = (plan) => ({
-    borderRadius: 20,
+    display: "flex",
+    flexDirection: "column",
+    height: "100%",
+    boxSizing: "border-box",
+    padding: 22,
+    borderRadius: 16,
     border: isCurrent(plan)
       ? `2px solid ${promoMintColors.borderStrong}`
       : `1px solid ${promoMintColors.border}`,
     boxShadow: isCurrent(plan)
-      ? `0 18px 45px ${promoMintColors.shadowStrong}`
-      : `0 8px 24px ${promoMintColors.shadow}`,
+      ? `0 14px 34px ${promoMintColors.shadowStrong}`
+      : `0 6px 18px ${promoMintColors.shadow}`,
     background: isPremiumPlan(plan)
-      ? `linear-gradient(180deg, #ffffff 0%, ${promoMintColors.indigoSoft} 100%)`
-      : `linear-gradient(180deg, #ffffff 0%, ${promoMintColors.mintSoft} 100%)`,
-    transform: isCurrent(plan) ? "translateY(-4px)" : "none",
-    transition: "all 0.2s ease",
+      ? `linear-gradient(180deg, #ffffff 0%, ${promoMintColors.accentSoft} 100%)`
+      : `linear-gradient(180deg, #ffffff 0%, ${promoMintColors.surfaceSoft} 100%)`,
+    transition: "box-shadow 0.2s ease, border-color 0.2s ease",
   });
 
+  const badgeBase = {
+    ...promoMintType.badge,
+    padding: "3px 10px",
+    borderRadius: 999,
+    whiteSpace: "nowrap",
+    flex: "0 0 auto",
+  };
+
   const currentBadge = {
-    background: promoMintColors.indigo,
-    color: "#fff",
-    padding: "4px 12px",
-    borderRadius: 999,
-    fontSize: 12,
+    ...badgeBase,
+    background: promoMintColors.primary,
+    color: promoMintColors.onPrimary,
   };
 
+  // Dark green on soft mint: the old tan-on-tan badge was close to unreadable.
   const popularBadge = {
-    background: promoMintColors.mint,
-    color: promoMintColors.text,
-    padding: "4px 12px",
-    borderRadius: 999,
-    fontSize: 12,
+    ...badgeBase,
+    background: promoMintColors.accent,
+    color: promoMintColors.primaryDarker,
   };
 
-  const freeButtonStyle = promoMintStyles.secondaryButton;
-  const premiumButtonStyle = promoMintStyles.primaryButton;
-  const mutedTextStyle = { color: promoMintColors.mutedText };
+  const blurbStyle = {
+    ...promoMintType.blurb,
+    color: promoMintColors.mutedText,
+    marginTop: 10,
+  };
   const pageIntroStyle = {
+    ...promoMintType.blurb,
+    fontSize: 15,
     color: promoMintColors.mutedText,
     marginBottom: 18,
   };
-  const priceStyle = { fontSize: 34, color: promoMintColors.text };
-  const sectionSpacingStyle = { marginTop: 14 };
-  const actionSpacingStyle = { marginTop: 18 };
-  const cardHeadingStyle = { color: promoMintColors.text };
+  // lineHeight is MANDATORY here. Polaris sets a fixed ~20px line-height on body
+  // copy, so a 36px glyph in a 20px line box spills over the element and lands
+  // on top of the text below it -- that is what made $0 / $19 / $190 unreadable.
+  const priceStyle = {
+    ...promoMintType.price,
+    color: promoMintColors.primaryDarker,
+  };
+  const sectionSpacingStyle = { marginTop: 16 };
+  // marginTop:auto pins every CTA to the bottom of its card, so the three
+  // buttons line up even though the blurbs differ in length.
+  const actionSpacingStyle = { marginTop: "auto", paddingTop: 18 };
+  const cardHeadingStyle = {
+    ...promoMintType.cardHeading,
+    color: promoMintColors.text,
+  };
 
   const planPageTitle = "Choose your PromoMint plan";
   const planIntro =
     "Pick the plan that matches how many coupon offers you want to feature on your product pages.";
 
   const savingBadge = {
-    background: promoMintColors.mint,
-    color: promoMintColors.text,
-    padding: "4px 12px",
-    borderRadius: 999,
-    fontSize: 12,
+    ...badgeBase,
+    background: promoMintColors.primaryDark,
+    color: promoMintColors.onPrimary,
   };
 
+  // No negative margin: the price element now occupies its true height, so the
+  // cadence simply sits under it.
   const cadenceStyle = {
+    ...promoMintType.cadence,
     color: promoMintColors.mutedText,
-    fontSize: 14,
-    marginTop: -6,
+    marginTop: 2,
   };
 
   // One card per plan slug. Free and Premium Monthly keep the exact features
   // and pricing they always had; Premium Yearly is the same feature set billed
   // once a year.
-  const PlanCard = ({ plan, blurb, offerLimit, badge, buttonStyle, activeLabel }) => {
+  const PlanCard = ({ plan, blurb, offerLimit, badge, activeLabel }) => {
     const meta = PLAN_META[plan];
 
     return (
-      <Card sectioned style={cardStyle(plan)}>
-        <Stack alignment="center" distribution="equalSpacing">
+      <div style={cardStyle(plan)}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
+            minHeight: 26,
+          }}
+        >
           <h2 style={cardHeadingStyle}>{meta.name}</h2>
           {isCurrent(plan) ? (
             <span style={currentBadge}>Current</span>
           ) : (
             badge || null
           )}
-        </Stack>
+        </div>
 
-        <h1 style={priceStyle}>{meta.price}</h1>
-        {meta.cadence ? <p style={cadenceStyle}>{meta.cadence}</p> : null}
-        <p style={mutedTextStyle}>{blurb}</p>
+        <div style={{ marginTop: 14 }}>
+          <div style={priceStyle}>{meta.price}</div>
+          {meta.cadence ? <div style={cadenceStyle}>{meta.cadence}</div> : null}
+        </div>
 
-        <Stack vertical spacing="loose" style={sectionSpacingStyle}>
+        <p style={{ ...blurbStyle, minHeight: 42 }}>{blurb}</p>
+
+        <div style={sectionSpacingStyle}>
           <Feature>Display coupon offers on product pages</Feature>
           <Feature>Show up to {offerLimit} active offers</Feature>
           <Feature>Adjust colors and layout</Feature>
           <Feature>Keep slider arrow navigation</Feature>
           <Feature>Support mobile-friendly browsing</Feature>
-        </Stack>
+        </div>
 
         <div style={actionSpacingStyle}>
           <Button
             fullWidth
-            style={buttonStyle}
+            primary={isPremiumPlan(plan)}
             disabled={
               !hasResolvedPlan ||
               isCurrent(plan) ||
@@ -639,44 +686,44 @@ export default function Pricing() {
             {isCurrent(plan) ? activeLabel : `Choose ${meta.name}`}
           </Button>
         </div>
-      </Card>
+      </div>
     );
   };
 
+  // A CSS grid rather than Polaris <Layout>: .Polaris-Layout sets
+  // align-items:flex-start, so its sections never stretch to a common height
+  // and the three CTAs could not be bottom-aligned. The grid also drops to one
+  // column on narrow screens without extra breakpoints.
   const pageContent = (
-    <Layout>
-      <Layout.Section oneThird>
-        <PlanCard
-          plan={FREE_PLAN}
-          blurb="A simple option for smaller catalogs"
-          offerLimit={3}
-          buttonStyle={freeButtonStyle}
-          activeLabel="Active plan"
-        />
-      </Layout.Section>
-
-      <Layout.Section oneThird>
-        <PlanCard
-          plan={PREMIUM_MONTHLY_PLAN}
-          blurb="More room for stores running multiple offers"
-          offerLimit={6}
-          badge={<span style={popularBadge}>Popular choice</span>}
-          buttonStyle={premiumButtonStyle}
-          activeLabel="Premium Monthly is active"
-        />
-      </Layout.Section>
-
-      <Layout.Section oneThird>
-        <PlanCard
-          plan={PREMIUM_ANNUAL_PLAN}
-          blurb={`Everything in Premium, billed yearly — save $${ANNUAL_SAVING} a year`}
-          offerLimit={6}
-          badge={<span style={savingBadge}>Save ${ANNUAL_SAVING}</span>}
-          buttonStyle={premiumButtonStyle}
-          activeLabel="Premium Yearly is active"
-        />
-      </Layout.Section>
-    </Layout>
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+        gap: 16,
+        alignItems: "stretch",
+      }}
+    >
+      <PlanCard
+        plan={FREE_PLAN}
+        blurb="A simple option for smaller catalogs"
+        offerLimit={3}
+        activeLabel="Active plan"
+      />
+      <PlanCard
+        plan={PREMIUM_MONTHLY_PLAN}
+        blurb="More room for stores running multiple offers"
+        offerLimit={6}
+        badge={<span style={popularBadge}>Popular choice</span>}
+        activeLabel="Premium Monthly is active"
+      />
+      <PlanCard
+        plan={PREMIUM_ANNUAL_PLAN}
+        blurb={`Everything in Premium, billed yearly — save $${ANNUAL_SAVING} a year`}
+        offerLimit={6}
+        badge={<span style={savingBadge}>Save ${ANNUAL_SAVING}</span>}
+        activeLabel="Premium Yearly is active"
+      />
+    </div>
   );
 
   return (

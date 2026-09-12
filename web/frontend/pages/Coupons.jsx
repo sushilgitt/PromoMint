@@ -323,7 +323,7 @@ export default function Coupons() {
               </p>
               {tier !== "premium" && (
                 <div style={{ marginTop: 12 }}>
-                  <Button onClick={goToPricing} style={promoMintStyles.primaryButton}>
+                  <Button onClick={goToPricing} primary>
                     See Premium
                   </Button>
                 </div>
@@ -400,7 +400,6 @@ export default function Coupons() {
                     primary
                     loading={saving}
                     disabled={!canSubmit || addDisabled}
-                    style={promoMintStyles.primaryButton}
                   >
                     {isEditing ? "Save changes" : "Add coupon"}
                   </Button>
