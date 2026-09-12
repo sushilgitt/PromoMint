@@ -7,7 +7,15 @@
   coupon_limit (3 free / 6 premium) caps how many are shown. If the store has
   no app coupons yet, the block renders nothing.
 {% endcomment %}
-{% assign plan = shop.metafields.custom["mx-pdp-coupon"] %}
+{% comment %}
+  .value is REQUIRED here. shop.metafields.custom["mx-pdp-coupon"] returns a
+  metafield OBJECT, and comparing that object to a string is never true -- so
+  without .value is_premium stayed false forever and every store, paid or not,
+  was capped at 3 coupons on the storefront. (The coupons metafield below
+  already used .value, which is why it worked.) The app writes this field as
+  the single_line_text_field "premium" or "free".
+{% endcomment %}
+{% assign plan = shop.metafields.custom["mx-pdp-coupon"].value | downcase | strip %}
 
 {% assign is_premium = false %}
 {% if plan == 'premium' %}
